@@ -5,3 +5,9 @@ updates:
     directory: /
     schedule:
       interval: monthly
+    commit-message:
+      prefix: ci
+    # One pull request for all action updates, so they never conflict with each other.
+    groups:
+      actions:
+        patterns: ["*"]
