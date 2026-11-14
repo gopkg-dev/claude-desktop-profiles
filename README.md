@@ -81,6 +81,8 @@ GitHub Actions runs on macOS (Apple Silicon):
 
 - **CI** (`.github/workflows/ci.yml`) runs on every push to `main` and on every pull request. It checks gofmt, then runs `go vet`, staticcheck and `go test -race`, and builds an ad-hoc signed DMG. The DMG is kept as a workflow artifact for 14 days and is meant for checking the build, not for distribution.
 - **Release** (`.github/workflows/release.yml`) runs when a `v*` tag is pushed. It builds the signed DMG and Sparkle appcast and attaches them to a **draft** release.
+- **NSGo update check** (`.github/workflows/nsgo-update.yml`) runs every Monday and can also be started by hand. NSGo has no tagged releases, so Dependabot can't follow it. The workflow compares the pinned NSGo commit with NSGo's `main` branch. If `main` is newer, it tries the upgrade (`go build`, `go vet`, and the tests of the `tools/nsgo` signing adapter, which patches NSGo's source) and opens or updates a single "NSGo update available" issue with the result. It never commits anything.
+- **Dependabot** checks the workflow actions monthly and groups all updates into one pull request.
 
 ### Releasing
 

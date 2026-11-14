@@ -79,6 +79,8 @@ GitHub Actions 在 macOS（Apple Silicon）上运行：
 
 - **CI**（`.github/workflows/ci.yml`）：每次推送到 `main` 和每个 Pull Request 都会运行。先检查 gofmt，再跑 `go vet`、staticcheck 和 `go test -race`，然后构建一个临时签名的 DMG。这个 DMG 作为工作流产物保留 14 天，只用来确认能构建成功，不用于分发。
 - **Release**（`.github/workflows/release.yml`）：推送 `v*` 标签时运行。它构建带签名的 DMG 和 Sparkle appcast，并附加到一个**草稿** Release 上。
+- **NSGo 更新检查**（`.github/workflows/nsgo-update.yml`）：每周一自动运行，也可以手动触发。NSGo 没有打 tag 的发布版，Dependabot 跟踪不了它，所以由这个工作流比较项目锁定的 NSGo 提交和 NSGo 的 `main` 分支。如果 `main` 更新，它会试着升级：跑 `go build`、`go vet`，以及 `tools/nsgo` 签名适配器的测试（这个适配器会给 NSGo 源码打补丁）。然后新建或更新一个"NSGo update available" issue 报告结果。它不会提交任何代码。
+- **Dependabot**：每月检查一次工作流用到的 Actions，所有升级合并成一个 PR。
 
 ### 发布新版本
 
