@@ -1,8 +1,8 @@
 name: Release
 
-# Pushing a tag such as v0.7.0 builds the installer and Sparkle appcast and attaches them
-# to a draft GitHub release. Publishing the draft makes the update visible to installed
-# copies, which read the latest release's appcast.
+# Pushing a tag such as v0.7.0 builds the installer and Sparkle appcast and publishes them
+# as a GitHub release. Installed copies read the latest release's appcast, so they are
+# offered the update as soon as this finishes.
 on:
   push:
     tags: ["v*"]
@@ -52,10 +52,10 @@ jobs:
           ls -l dist/releases
           ls dist/releases/appcast-*.xml > /dev/null
 
-      - name: Create a draft release
+      - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$GITHUB_REF_NAME" dist/releases/* \
-            --draft --verify-tag --generate-notes \
+            --verify-tag --generate-notes --latest \
             --title "Claude Desktop Profiles ${GITHUB_REF_NAME#v}"

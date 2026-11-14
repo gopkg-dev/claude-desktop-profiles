@@ -78,7 +78,7 @@ make release      # 构建带更新签名的 DMG 和 Sparkle appcast
 GitHub Actions 在 macOS（Apple Silicon）上运行：
 
 - **CI**（`.github/workflows/ci.yml`）：每次推送到 `main` 和每个 Pull Request 都会运行。先检查 gofmt，再跑 `go vet`、staticcheck 和 `go test -race`，然后构建一个临时签名的 DMG。这个 DMG 作为工作流产物保留 14 天，只用来确认能构建成功，不用于分发。
-- **Release**（`.github/workflows/release.yml`）：推送 `v*` 标签时运行。它构建带签名的 DMG 和 Sparkle appcast，并附加到一个**草稿** Release 上。
+- **Release**（`.github/workflows/release.yml`）：推送 `v*` 标签时运行。它构建 DMG 和 Sparkle appcast，并直接发布为 Release。
 - **NSGo 更新检查**（`.github/workflows/nsgo-update.yml`）：每周一自动运行，也可以手动触发。NSGo 没有打 tag 的发布版，Dependabot 跟踪不了它，所以由这个工作流比较项目锁定的 NSGo 提交和 NSGo 的 `main` 分支。如果 `main` 更新，它会试着升级：跑 `go build`、`go vet`，以及 `tools/nsgo` 签名适配器的测试（这个适配器会给 NSGo 源码打补丁）。然后新建或更新一个"NSGo update available" issue 报告结果。它不会提交任何代码。
 - **Dependabot**：每月检查一次工作流用到的 Actions，所有升级合并成一个 PR。
 
@@ -86,7 +86,7 @@ GitHub Actions 在 macOS（Apple Silicon）上运行：
 
 1. 修改 `nsgo.yaml` 和 `main.go` 里的版本号。
 2. 给这个提交打标签并推送，例如 `git tag v0.7.0 && git push origin v0.7.0`。如果标签和这两处的版本号不一致，工作流会停止。
-3. 工作流跑完后，检查草稿 Release，确认无误再发布。已安装的应用读取的是最新已发布 Release 里的 appcast，所以只有发布后才能看到更新。
+3. 工作流跑完就会直接发布 Release。已安装的应用读取的是最新 Release 里的 appcast，会马上收到更新提示，所以请确认版本可以上线后再推送标签。
 
 Release 工作流只需要一个仓库 Secret：`NSGO_UPDATES_KEY`，即更新签名私钥。用下面的命令从钥匙串直接写入，私钥不会显示在屏幕上：
 
