@@ -15,7 +15,7 @@ A native macOS menu bar app for people who use more than one Claude Desktop acco
 - **One-click switching.** Claude Desktop is quit cleanly, the account data is swapped and the app is reopened. A progress panel shows each step as it happens.
 - **Adding accounts.** Claude Desktop opens in a fresh environment so you can sign in. The new account is detected automatically, and duplicates are flagged. You can give up and go back to the previous account at any time.
 - **Shared Claude Code sessions.** Local Code sessions are merged across accounts, while each account keeps its own sign-in. Permission modes stay the same after a switch, and you won't be asked to resume imported sessions again. A session browser shows which accounts already have each session.
-- **Menu bar.** Lists every account with its current usage. From there you can switch accounts, refresh, toggle session sharing or open the window. Closing the window keeps the app running in the menu bar.
+- **Menu bar.** Lists every account with its current usage. From there you can switch accounts, refresh, toggle session sharing or open the window. Closing the window keeps the app running in the menu bar only, without a Dock icon; the icon comes back with the window.
 - **Exit IP check.** Shows the IP address, country, city and ASN that Claude traffic leaves from, using the same proxy settings as Claude Desktop.
 - **Automatic updates.** Release builds update themselves from GitHub Releases through Sparkle, and every update's signature is checked.
 - **Light and dark mode**, following your system setting.

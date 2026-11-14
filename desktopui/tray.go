@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/nsgo-dev/nsgo/core"
+	"github.com/nsgo-dev/nsgo/desktop"
 
 	"claudeprofiles/profiles"
 )
@@ -17,7 +18,14 @@ func mainWindowConstraints() core.WindowConstraints {
 	return core.WindowConstraints{MinWidth: 480, MinHeight: 560, MaxWidth: 600, MaxHeight: 1100, NoMaximize: true}
 }
 
-// attachTray keeps the main window alive while it is hidden.
+// showWindow brings the main window back, with the app's Dock icon, which closing the window removed.
+func (a *app) showWindow(window *core.Window) {
+	desktop.SetDockVisible(a.cx, true)
+	window.Focus()
+}
+
+// attachTray keeps the main window alive while it is hidden. A closed window leaves the app in the menu bar
+// only: the Dock icon and the app switcher entry return with the window.
 func (a *app) attachTray() {
 	cx := a.cx
 	window := cx.CurrentWindow()
@@ -28,11 +36,13 @@ func (a *app) attachTray() {
 	window.OnClosing(cx, func(closing *core.WindowClosing) {
 		closing.Cancel()
 		window.Hide()
+		desktop.SetDockVisible(cx, false)
 	})
-	cx.OnReopen(window.Focus)
+	// Opening the app again from Finder or Launchpad while it is in the menu bar.
+	cx.OnReopen(func() { a.showWindow(window) })
 	quit := func() {
 		if a.busy.Get() {
-			window.Focus()
+			a.showWindow(window)
 			a.status.Set("操作进行中，请完成后退出")
 			return
 		}
@@ -47,7 +57,7 @@ func (a *app) attachTray() {
 				if a.page != nil {
 					a.page.Set("about")
 				}
-				window.Focus()
+				a.showWindow(window)
 			}},
 			{Label: "检查更新…", OnSelect: a.checkForUpdates},
 			{Separator: true},
@@ -77,7 +87,7 @@ func (a *app) trayMenu(window *core.Window, quit func()) []core.MenuItem {
 			if a.page != nil && page != "" {
 				a.page.Set(page)
 			}
-			window.Focus()
+			a.showWindow(window)
 			if then != nil {
 				then()
 			}
@@ -127,7 +137,7 @@ func (a *app) trayMenu(window *core.Window, quit func()) []core.MenuItem {
 				a.pauseSharing()
 				return
 			}
-			window.Focus()
+			a.showWindow(window)
 			a.enableSharing()
 		}}
 	items = append(items, core.MenuItem{Separator: true},

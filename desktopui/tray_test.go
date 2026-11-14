@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"image/png"
+	"strings"
 	"testing"
 	"time"
 
@@ -91,17 +92,39 @@ func TestTrayWindowLifecycle(t *testing.T) {
 	if !foundLimits || trayID == 0 {
 		t.Fatal("main window constraints or template tray missing")
 	}
+	// dock is the last Dock visibility the app asked for since the previous commit: "shown", "hidden" or "".
+	// NSGo's driver package is internal, so the item is recognized by its trace name.
+	dock := func() string {
+		state := ""
+		if batch := tree.Commit(); batch != nil {
+			for _, item := range batch.Items {
+				if fields := strings.Fields(item.TraceLine()); len(fields) > 0 && fields[0] == "dock" {
+					state = map[bool]string{true: "shown", false: "hidden"}[item.On]
+				}
+			}
+		}
+		return state
+	}
 	surface := tree.Surfaces()[0]
 	surface.Commit()
 	surface.Dispatch(nsgotest.Event{Kind: testWindowClose})
 	if window.Closed() || window.Visible() {
 		t.Fatal("closing the window must hide it without destroying it")
 	}
+	if got := dock(); got != "hidden" {
+		t.Fatalf("closing the window should remove the Dock icon, got %q", got)
+	}
 	tree.Dispatch(nsgotest.Event{Kind: testReopen})
 	if !window.Visible() || window.Closed() {
-		t.Fatal("Dock reopen did not restore the existing window")
+		t.Fatal("reopening the app did not restore the existing window")
+	}
+	if got := dock(); got != "shown" {
+		t.Fatalf("reopening the app should bring back the Dock icon, got %q", got)
 	}
 	surface.Dispatch(nsgotest.Event{Kind: testWindowClose})
+	if got := dock(); got != "hidden" {
+		t.Fatalf("closing the window again should remove the Dock icon, got %q", got)
+	}
 	tree.Dispatch(nsgotest.Event{Kind: testTrayClick, Count: trayID})
 	var showID uint32
 	if batch := tree.Commit(); batch != nil {
@@ -119,6 +142,9 @@ func TestTrayWindowLifecycle(t *testing.T) {
 	tree.Dispatch(nsgotest.Event{Kind: nsgotest.EventMenu, Count: showID})
 	if !window.Visible() || window.Closed() {
 		t.Fatal("tray action did not restore the existing window")
+	}
+	if got := dock(); got != "shown" {
+		t.Fatalf("showing the window from the tray should bring back the Dock icon, got %q", got)
 	}
 	application.busy.Set(true)
 	application.status.Set("正在切换账号…")
