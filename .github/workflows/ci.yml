@@ -19,9 +19,9 @@ jobs:
     # macos-15 runners are Apple Silicon, the only target the app supports.
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
 
@@ -46,9 +46,9 @@ jobs:
     needs: check
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
 
@@ -57,7 +57,7 @@ jobs:
       - name: Build
         run: go tool nsgo build -target macos_arm64 -sign -
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: claude-desktop-profiles-${{ github.sha }}
           path: dist/releases/*.dmg
