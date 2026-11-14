@@ -1,0 +1,7 @@
+version: 2
+updates:
+  # Keep the workflow actions current. Go modules are left alone: NSGo is pinned on purpose.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly

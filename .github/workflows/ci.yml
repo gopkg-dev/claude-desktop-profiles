@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Vet, lint and test
+    # macos-15 runners are Apple Silicon, the only target the app supports.
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Check formatting
+        run: |
+          unformatted="$(gofmt -l $(git ls-files '*.go'))"
+          if [ -n "$unformatted" ]; then
+            echo "These files need gofmt:"; echo "$unformatted"; exit 1
+          fi
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Staticcheck
+        run: go tool staticcheck ./...
+
+      - name: Test
+        run: go test -race ./...
+
+  build:
+    name: Build app
+    needs: check
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      # CI has no signing certificate, so this build is signed ad hoc. It checks that the app
+      # and installer build; it is not meant for distribution.
+      - name: Build
+        run: go tool nsgo build -target macos_arm64 -sign -
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: claude-desktop-profiles-${{ github.sha }}
+          path: dist/releases/*.dmg
+          if-no-files-found: error
+          retention-days: 14

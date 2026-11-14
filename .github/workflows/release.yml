@@ -1,0 +1,61 @@
+name: Release
+
+# Pushing a tag such as v0.7.0 builds the installer and Sparkle appcast and attaches them
+# to a draft GitHub release. Publishing the draft makes the update visible to installed
+# copies, which read the latest release's appcast.
+on:
+  push:
+    tags: ["v*"]
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Check the tag matches the app version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          manifest="$(sed -n 's/^version:[[:space:]]*//p' nsgo.yaml | tr -d '"')"
+          code="$(sed -n 's/^const applicationVersion = "\(.*\)"/\1/p' main.go)"
+          echo "tag $tag, nsgo.yaml $manifest, main.go $code"
+          if [ "$tag" != "$manifest" ] || [ "$tag" != "$code" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match the version in nsgo.yaml ($manifest) and main.go ($code)."
+            exit 1
+          fi
+
+      - name: Test
+        run: go test ./...
+
+      # Signed ad hoc: no certificate is needed, and the signature carries no developer name
+      # or email. Updates are verified by Sparkle's EdDSA signature instead.
+      - name: Build
+        env:
+          NSGO_UPDATES_KEY: ${{ secrets.NSGO_UPDATES_KEY }}
+        run: |
+          if [ -z "$NSGO_UPDATES_KEY" ]; then
+            echo "::error::Set the NSGO_UPDATES_KEY secret; see README."
+            exit 1
+          fi
+          go tool nsgo build -target macos_arm64 -sign -
+          ls -l dist/releases
+          ls dist/releases/appcast-*.xml > /dev/null
+
+      - name: Create a draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/releases/* \
+            --draft --verify-tag --generate-notes \
+            --title "Claude Desktop Profiles ${GITHUB_REF_NAME#v}"

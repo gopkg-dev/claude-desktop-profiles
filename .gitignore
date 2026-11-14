@@ -1,0 +1,8 @@
+/dist/
+**/.nsgo/
+/.cache/
+/coverage.out
+/claude-profiles
+/claudeprofiles
+.DS_Store
+*.log

@@ -1,0 +1,25 @@
+name: Claude Desktop Profiles
+id: local.claudeprofiles.app
+version: 0.6.0
+
+sign:
+  identity: Apple Development
+
+icon:
+  png: assets/app-icon.png
+
+apple:
+  info:
+    NSAppleEventsUsageDescription: "切换账号时正常退出 Claude Desktop，确保数据保存完成。"
+
+release:
+  github: gopkg-dev/claude-desktop-profiles
+
+# Sparkle checks the latest GitHub release once a day and installs signed updates.
+# The secret key is in the login keychain (claude-desktop-profiles-updates); `make release` reads it.
+updates:
+  key: xQujX20qVlAUWiZtW6URr+j5R2X+JZO7sML1TeQmaLU=
+
+build:
+  output: dist
+  targets: [macos_arm64]
