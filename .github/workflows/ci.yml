@@ -19,7 +19,7 @@ jobs:
     # macos-15 runners are Apple Silicon, the only target the app supports.
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-go@v6
         with:
@@ -46,7 +46,7 @@ jobs:
     needs: check
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-go@v6
         with:
