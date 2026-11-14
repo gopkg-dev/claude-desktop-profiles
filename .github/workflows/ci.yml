@@ -57,7 +57,7 @@ jobs:
       - name: Build
         run: go tool nsgo build -target macos_arm64 -sign -
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: claude-desktop-profiles-${{ github.sha }}
           path: dist/releases/*.dmg
