@@ -66,7 +66,7 @@ func refreshFixture(store Store, current profiles.Snapshot) (*app, <-chan func()
 		failure: core.NewSignal(cx, ""), lastFullRefresh: time.Now(),
 		progress: core.NewSignalFunc(cx, refreshProgress{}, func(a, b refreshProgress) bool { return reflect.DeepEqual(a, b) }),
 		toast:    core.NewSignal(cx, ""), addReturn: core.NewSignal(cx, ""), addDuplicate: core.NewSignal(cx, false),
-		sessions: core.NewSignal[*sessionPage](cx, nil)}
+		sessions: core.NewSignal[*sessionPage](cx, nil), transition: core.NewSignal[*transition](cx, nil)}
 	return a, posted
 }
 
