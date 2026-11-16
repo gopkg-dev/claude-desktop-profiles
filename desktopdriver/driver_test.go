@@ -7,6 +7,7 @@ import (
 	"os"
 	"reflect"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -85,6 +86,8 @@ type fakeCommands struct {
 	commands      []commandCall
 	failName      string
 	childOnly     bool
+	killed        bool
+	hungQuit      bool
 }
 
 func (f *fakeCommands) run(ctx context.Context, name string, args ...string) ([]byte, error) {
@@ -95,7 +98,7 @@ func (f *fakeCommands) run(ctx context.Context, name string, args ...string) ([]
 	if name == f.failName {
 		return []byte("partial potentially sensitive output"), errors.New("sensitive command failure")
 	}
-	running := !(f.stopAfterQuit && f.quit)
+	running := !(f.stopAfterQuit && f.quit) && !f.killed
 	switch name {
 	case "/bin/ps":
 		text := fmt.Sprintf("1 %d /usr/bin/fake-test\n", os.Getuid())
@@ -110,6 +113,9 @@ func (f *fakeCommands) run(ctx context.Context, name string, args ...string) ([]
 		}
 		return []byte(text), nil
 	case "/usr/bin/osascript":
+		if f.hungQuit {
+			return nil, errors.New("no reply")
+		}
 		f.quit = true
 		return nil, nil
 	case "/usr/bin/open":
@@ -200,6 +206,29 @@ func TestStopTimeoutLeavesAppAlive(t *testing.T) {
 	if !errors.Is(err, context.DeadlineExceeded) || !errors.Is(err, ErrStillRunning) {
 		t.Fatalf("expected timeout, got %v", err)
 	}
+	message := err.Error()
+	if !strings.Contains(message, "Claude（PID\u00a042）") || !strings.Contains(message, "等待超时") {
+		t.Fatalf("timeout does not name the blocking process: %q", message)
+	}
+	if strings.Contains(message, "deadline") || strings.Contains(message, f.live) {
+		t.Fatalf("timeout leaks internal detail: %q", message)
+	}
+}
+
+func TestDescribeProcessesLimitsAndOrders(t *testing.T) {
+	t.Parallel()
+	procs := []process{
+		{pid: 9, executable: "/x/claude"}, {pid: 3}, {pid: 5, executable: "/A/Claude Helper (Renderer)"},
+		{pid: 7, executable: "/x/disclaimer"}, {pid: 1, executable: "/A/Claude"},
+	}
+	got := describeProcesses(procs)
+	want := "Claude（PID\u00a01）、未知进程（PID\u00a03）、Claude Helper (Renderer)（PID\u00a05）、disclaimer（PID\u00a07） 等 5 个"
+	if got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+	if describeProcesses(nil) != "" {
+		t.Fatal("empty list must add nothing")
+	}
 }
 
 func TestStopRejectsInvalidPathBeforeAnyCommand(t *testing.T) {
@@ -244,5 +273,94 @@ func TestCanceledOperationsRunNoCommands(t *testing.T) {
 	}
 	if len(f.commands) != 0 {
 		t.Fatalf("commands ran after cancellation: %v", f.commands)
+	}
+}
+
+type signalLog struct {
+	signals []syscall.Signal
+	pids    []int
+	dieOn   syscall.Signal
+	f       *fakeCommands
+}
+
+func (l *signalLog) kill(pid int, sig syscall.Signal) error {
+	l.signals = append(l.signals, sig)
+	l.pids = append(l.pids, pid)
+	if l.dieOn != 0 && sig == l.dieOn {
+		l.f.killed = true
+	}
+	return nil
+}
+
+func forceDriver(f *fakeCommands, log *signalLog) Driver {
+	return Driver{LiveDir: f.live, run: f.run, kill: log.kill, stopTimeout: time.Second,
+		pollInterval: time.Millisecond, forceGrace: 20 * time.Millisecond}
+}
+
+func TestStopNeverSignalsWithoutForce(t *testing.T) {
+	t.Parallel()
+	f := &fakeCommands{live: "/Users/test/Library/Application Support/Claude"}
+	log := &signalLog{f: f, dieOn: syscall.SIGTERM}
+	d := forceDriver(f, log)
+	d.stopTimeout = 30 * time.Millisecond
+	if err := d.stop(context.Background()); !errors.Is(err, ErrStillRunning) {
+		t.Fatalf("err=%v", err)
+	}
+	if len(log.signals) != 0 {
+		t.Fatalf("signaled without the user's consent: %v", log.signals)
+	}
+}
+
+func TestForceStopEscalatesOnlyAsNeeded(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name  string
+		dieOn syscall.Signal
+		want  []syscall.Signal
+	}{
+		{"terminate suffices", syscall.SIGTERM, []syscall.Signal{syscall.SIGTERM}},
+		{"needs kill", syscall.SIGKILL, []syscall.Signal{syscall.SIGTERM, syscall.SIGKILL}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			f := &fakeCommands{live: "/Users/test/Library/Application Support/Claude", hungQuit: true}
+			log := &signalLog{f: f, dieOn: tt.dieOn}
+			d := forceDriver(f, log)
+			if err := d.stop(WithForceQuit(context.Background())); err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(log.signals, tt.want) {
+				t.Fatalf("signals=%v, want %v", log.signals, tt.want)
+			}
+			for _, pid := range log.pids {
+				if pid != 42 {
+					t.Fatalf("signaled unrelated pid %d", pid)
+				}
+			}
+		})
+	}
+}
+
+func TestForceStopSkipsSignalsWhenDesktopQuits(t *testing.T) {
+	t.Parallel()
+	f := &fakeCommands{live: "/Users/test/Library/Application Support/Claude", stopAfterQuit: true}
+	log := &signalLog{f: f}
+	d := forceDriver(f, log)
+	if err := d.stop(WithForceQuit(context.Background())); err != nil {
+		t.Fatal(err)
+	}
+	if len(log.signals) != 0 {
+		t.Fatalf("a graceful quit must not be followed by signals: %v", log.signals)
+	}
+}
+
+func TestForceStopReportsSurvivors(t *testing.T) {
+	t.Parallel()
+	f := &fakeCommands{live: "/Users/test/Library/Application Support/Claude"}
+	log := &signalLog{f: f}
+	d := forceDriver(f, log)
+	err := d.stop(WithForceQuit(context.Background()))
+	if !errors.Is(err, ErrStillRunning) || !strings.Contains(err.Error(), "Claude（PID\u00a042）") {
+		t.Fatalf("err=%v", err)
 	}
 }

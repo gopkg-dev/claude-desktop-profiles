@@ -1,12 +1,14 @@
 package desktopui
 
 import (
+	"errors"
 	"time"
 
 	"github.com/nsgo-dev/nsgo/core"
 	"github.com/nsgo-dev/nsgo/icons/lucide"
 	"github.com/nsgo-dev/nsgo/ui"
 
+	"claudeprofiles/desktopdriver"
 	"claudeprofiles/profiles"
 )
 
@@ -19,6 +21,10 @@ type transition struct {
 	current  profiles.Step
 	err      string
 	done     bool
+	// item is kept so a quit that timed out can be retried with force.
+	item *action
+	// forced marks a retry that may terminate processes; forceable offers that retry.
+	forced, forceable bool
 }
 
 // transitionDone is how long a finished transition stays on screen before it closes itself.
@@ -28,9 +34,9 @@ const transitionDone = 1200 * time.Millisecond
 func restarts(kind string) bool { return kind == "switch" || kind == "add" || kind == "sync" }
 
 // beginTransition shows the steps an action will take.
-func (a *app) beginTransition(item *action) {
+func (a *app) beginTransition(item *action, force bool) {
 	snapshot := a.snapshot.Get()
-	value := &transition{kind: item.kind, to: item.profile}
+	value := &transition{kind: item.kind, to: item.profile, item: item, forced: force}
 	shared := false
 	if snapshot != nil {
 		shared = snapshot.SharedSessions && len(snapshot.Profiles) > 1
@@ -78,6 +84,8 @@ func (a *app) finishTransition(err error) {
 	next := *value
 	if err != nil {
 		next.err = err.Error()
+		// Forcing again would not help once the forced attempt itself failed.
+		next.forceable = !value.forced && value.item != nil && errors.Is(err, desktopdriver.ErrStillRunning)
 		a.transition.Set(&next)
 		return
 	}
@@ -117,10 +125,22 @@ func (value *transition) title() string {
 	}
 }
 
+// forceRetry repeats a failed action, this time allowing leftover Desktop processes to be terminated.
+func (a *app) forceRetry() {
+	value := a.transition.GetUntracked()
+	if value == nil || !value.forceable || a.busy.Get() {
+		return
+	}
+	a.execute(value.item, true)
+}
+
 // stepText is a step's name and what it is doing while it runs.
 func (value *transition) stepText(step profiles.Step) (string, string) {
 	switch step {
 	case profiles.StepQuit:
+		if value.forced {
+			return "退出 Claude Desktop", "正在结束未退出的进程"
+		}
 		return "退出 Claude Desktop", "等待它保存数据，可能需要十几秒"
 	case profiles.StepSync:
 		return "同步 Code 会话", "把其他账号的会话合并进来"
@@ -179,7 +199,24 @@ func (a *app) transitionView(cx *core.Scope, value *transition) core.Node {
 
 	header := a.transitionHeader(cx, value, snapshot)
 	footer := []core.Node{}
+	button := func(text, testID string, background, foreground core.Color, press func()) core.Node {
+		return pressable{Label: text, TestID: testID, OnPress: press, Style: core.Style{FlexGrow: 1, FlexBasis: core.Pt(0),
+			Height: core.Pt(28), CornerRadius: 14, Background: background, AlignItems: core.AlignCenter,
+			JustifyContent: core.JustifyCenter, Active: &core.Style{Opacity: core.Alpha(0.85)}},
+			Children: []core.Node{label(text, 13, core.FontWeightMedium, foreground)}}
+	}
 	switch {
+	case value.err != "" && value.forceable:
+		footer = append(footer,
+			core.Text{Content: value.err, TestID: "transition-error", Style: core.Style{FontSize: 11, Color: t.DangerText(),
+				TextAlign: core.TextAlignCenter, LineHeightMultiple: 1.4, Width: core.Pct(100)}},
+			core.Text{Content: "也可以强制结束这些进程后继续。正在运行的 Code 会话会被中断，未保存的内容可能丢失。",
+				TestID: "transition-force-warning", Style: core.Style{FontSize: 11, Color: t.Secondary(),
+					TextAlign: core.TextAlignCenter, LineHeightMultiple: 1.4, Width: core.Pct(100)}},
+			core.View{Style: core.Style{Direction: core.Row, Gap: 8, Width: core.Pct(100)}, Children: []core.Node{
+				button("取消", "transition-close", t.Fill(), t.Text(), func() { a.transition.Set(nil) }),
+				button("强制结束并继续", "transition-force", t.Danger(), core.RGB(0xffffff), a.forceRetry),
+			}})
 	case value.err != "":
 		footer = append(footer,
 			core.Text{Content: value.err, TestID: "transition-error", Style: core.Style{FontSize: 11, Color: t.DangerText(),

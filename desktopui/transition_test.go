@@ -3,9 +3,11 @@ package desktopui
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
+	"claudeprofiles/desktopdriver"
 	"claudeprofiles/profiles"
 )
 
@@ -14,10 +16,18 @@ type steppedStore struct {
 	*pageStore
 	release chan struct{}
 	fail    error
+	// failUnforced fails only attempts that were not allowed to force Desktop to quit.
+	failUnforced error
+	forced       int
 }
 
 func (s *steppedStore) Switch(ctx context.Context, id string) error {
 	profiles.ReportStep(ctx, profiles.StepQuit)
+	if desktopdriver.ForceRequested(ctx) {
+		s.forced++
+	} else if s.failUnforced != nil {
+		return s.failUnforced
+	}
 	select {
 	case <-s.release:
 	case <-ctx.Done():
@@ -74,5 +84,40 @@ func TestFailedSwitchStaysOpenWithItsReason(t *testing.T) {
 	application.Press("id:transition-close")
 	if application.Exists("id:transition-panel") {
 		t.Fatal("dismiss did not close the panel")
+	}
+}
+
+func TestFailedSwitchShowsNoForceForOtherErrors(t *testing.T) {
+	store := &steppedStore{pageStore: pageFixture(), release: make(chan struct{}), fail: errors.New("其他错误")}
+	close(store.release)
+	application := startPages(t, store, false)
+	application.Press("id:switch-work")
+	application.Press("id:confirm")
+	application.WaitUntil(3*time.Second, func() bool { return application.Exists("id:transition-error") })
+	if application.Exists("id:transition-force") {
+		t.Fatal("force offered for an unrelated failure")
+	}
+}
+
+func TestStuckQuitOffersForceThenFinishes(t *testing.T) {
+	stuck := fmt.Errorf("%w。未退出的进程：disclaimer（PID\u00a03438）、claude（PID\u00a03439）、Claude Helper (Renderer)（PID\u00a036979）（等待超时）",
+		desktopdriver.ErrStillRunning)
+	store := &steppedStore{pageStore: pageFixture(), release: make(chan struct{}), failUnforced: stuck}
+	close(store.release)
+	application := startPages(t, store, false)
+	application.Press("id:switch-work")
+	application.Press("id:confirm")
+	application.WaitUntil(3*time.Second, func() bool { return application.Exists("id:transition-force") })
+	application.Find("id:transition-force-warning")
+	application.Screenshot("design-switch-force")
+	if store.forced != 0 {
+		t.Fatal("forced before the user chose it")
+	}
+	application.Press("id:transition-force")
+	application.WaitUntil(3*time.Second, func() bool {
+		return application.Exists("id:transition-title") && application.Find("id:transition-title").Text == "已切换到 work@example.com"
+	})
+	if store.forced != 1 {
+		t.Fatalf("forced %d times", store.forced)
 	}
 }

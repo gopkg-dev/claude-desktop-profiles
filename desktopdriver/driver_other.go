@@ -2,7 +2,12 @@
 
 package desktopdriver
 
-import "context"
+import (
+	"context"
+	"syscall"
+)
+
+var defaultKill signaler = func(int, syscall.Signal) error { return ErrUnsupported }
 
 // Stop refuses unsupported platforms without running commands.
 func (d *Driver) Stop(context.Context) error {

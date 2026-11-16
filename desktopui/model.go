@@ -9,6 +9,7 @@ import (
 
 	"github.com/nsgo-dev/nsgo/core"
 
+	"claudeprofiles/desktopdriver"
 	"claudeprofiles/desktopusage"
 	"claudeprofiles/profiles"
 )
@@ -164,8 +165,14 @@ func (a *app) submit() {
 		return
 	}
 	a.pending.Set(nil)
+	a.execute(item, false)
+}
+
+// execute runs a confirmed action; force lets Claude Desktop's leftover processes be terminated,
+// which only happens after the user chose it from a failed quit.
+func (a *app) execute(item *action, force bool) {
 	if restarts(item.kind) {
-		a.beginTransition(item)
+		a.beginTransition(item, force)
 	}
 	returnID := ""
 	if snapshot := a.snapshot.Get(); snapshot != nil {
@@ -174,6 +181,9 @@ func (a *app) submit() {
 	a.run(busyMessage(item.kind), func(ctx context.Context) (string, error) {
 		if restarts(item.kind) {
 			ctx = profiles.WithProgress(ctx, a.reportStep)
+		}
+		if force {
+			ctx = desktopdriver.WithForceQuit(ctx)
 		}
 		switch item.kind {
 		case "adopt":

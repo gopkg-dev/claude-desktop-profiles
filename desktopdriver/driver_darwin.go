@@ -1,6 +1,11 @@
 package desktopdriver
 
-import "context"
+import (
+	"context"
+	"syscall"
+)
+
+var defaultKill signaler = syscall.Kill
 
 // Stop requests a graceful exit and refuses to continue while helpers are alive.
 func (d *Driver) Stop(ctx context.Context) error {
