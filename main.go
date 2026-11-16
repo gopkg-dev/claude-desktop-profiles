@@ -13,7 +13,7 @@ import (
 	"claudeprofiles/profiles"
 )
 
-const applicationVersion = "0.7.0"
+const applicationVersion = "0.8.0"
 
 func main() {
 	refreshOnce := flag.Bool("refresh-once", false, "窗口就绪后执行一次在线刷新，沿用账号冷却限制")
