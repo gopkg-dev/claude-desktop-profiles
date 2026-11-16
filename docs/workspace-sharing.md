@@ -36,6 +36,7 @@ Report 的 CodeCopied / CodeUpdated / Tombstoned 为成功提交的数量；失�
 - 每个 profile 的 `claude_desktop_config.json` 里，Desktop 按账号保存文件夹默认权限模式（`epitaxyPrefs.epitaxy-folder-permission-mode-v2.<账号>`）、已确认过的模式提示（`epitaxy-perm-mode-acks-v2.<账号>`）和跳过权限确认的开启状态（`bypassPermissionsOptInByAccount`）。同步时把其他账号的这些设置合并到目标账号名下：目标账号自己已有的文件夹设置和明确的「不开启」优先，其余取最近保存的配置；提示确认取并集。组织策略缓存 `bypassPermissionsGateByAccount` 不复制，由 Desktop 重新获取；文件里其他内容不改，有变化时才写入，旧文件先备份。
 - 普通外部项目 cwd 原样保留。userData 内的 scratch-workspaces 同步用户文件，并映射到 LiveDir；其他内部工作目录（如需要单独处理的 git-shadow）明确跳过。外部目录不存在时报告说明，保留仍可阅读的历史。
 - 不读取或合并其他会话系统、VM 磁盘、账号 memory 和调度任务。
+- 不修改各账号目录里的 `archived-sessions.idx`。它只是 Desktop 用来推迟加载已归档会话的提示：列在里面的会话第二轮再读，没列的会话 Desktop 读前 4 KiB 看到顶层 `"isArchived": true` 也会推迟，两轮都会把全部会话读进来；文件读不了就不带提示照常加载。加载完成后 Desktop 按实际的已归档会话重写它，之后每次归档或取消归档也会更新。所以同步后它暂时过期，只影响加载顺序，不影响会话列表；正确性只取决于索引里的 `isArchived`，同步写入的记录很小，这个字段总在前 4 KiB 内。
 - 会话里发布的 Artifact、评论和监听存在云端，属于发布时登录的账号。会话共享到另一个账号后，这些 Artifact 在新账号下查不到，评论监听也无法恢复；需要切回原账号，或在 claude.ai 上把 Artifact 共享给新账号。
 
 scratch 文件复制保留权限和修改时间，目标同时间文件优先；拒绝符号链接、非普通文件，并排除凭据及执行配置：.credentials.json、Cookies、Local Storage、IndexedDB、.claude、.git、.mcp.json、CLAUDE.md / CLAUDE.local.md 等。用户工作文件中的普通 config.json 可以同步；Desktop 根部的账号 config.json 不在允许的目标路径里。
@@ -61,6 +62,10 @@ scratch 文件复制保留权限和修改时间，目标同时间文件优先；
 
 - .vite/build/index.chunk-CuH_hqMe.js：Code getStorageDir、registerExternalSession / finishRegisterExternalSession。
 - .vite/build/index.chunk-qlkwmFgi.js：原生 Code 导入的最小持久化记录构造器 ic。
+
+2026-11-17 只读分析 Claude Desktop 5.11492.5 的 app.asar：
+
+- .vite/build/index.chunk-D1yJ0UIX.js：LocalSessionManager.loadSessionRecords 读取 archived-sessions hint、按前 4 KiB 判断归档并推迟加载，加载后由 archivedIdsHint.adopt 重写提示。同日本机一个账号目录有 47 个会话（40 个为导入），提示与记录里的已归档会话一致。
 
 这些是 Desktop 内部磁盘协议，升级后需重新核对。模拟目录测试覆盖索引合并、去重、目标平局优先、删除传播、字段白名单、scratch 文件、符号链接拒绝、大小限制和写入失败回滚。真实 UI 可见性、打开历史及继续对话属于单独验收项。
 
