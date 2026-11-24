@@ -41,7 +41,15 @@ func prepareTool(ctx context.Context, development bool) (string, func(), error) 
 		return "", nil, fmt.Errorf("无法定位项目锁定的 NSGo 模块：%w", err)
 	}
 	var module moduleInfo
-	if err := json.Unmarshal(data, &module); err != nil || module.Dir == "" || module.Version == "" {
+	if err := json.Unmarshal(data, &module); err == nil && module.Dir == "" && module.Version != "" {
+		// `go tool` can run from the build cache without the module's source, as on CI after a
+		// cache restore; download it so its go.mod and sources can be read.
+		if data, err = exec.CommandContext(ctx, "go", "mod", "download", "-json", upstreamModule).Output(); err == nil {
+			module = moduleInfo{}
+			err = json.Unmarshal(data, &module)
+		}
+	}
+	if module.Dir == "" || module.Version == "" {
 		return "", nil, errors.New("NSGo 模块路径不可用，请先下载项目依赖")
 	}
 	data, err = exec.CommandContext(ctx, "go", "env", "GOMOD").Output()
