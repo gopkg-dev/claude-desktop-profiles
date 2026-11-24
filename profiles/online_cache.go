@@ -66,6 +66,22 @@ type onlineEntry struct {
 	NextAllowed time.Time       `json:"nextAllowed"`
 	Failures    int             `json:"failures"`
 	LastError   string          `json:"lastError,omitempty"`
+	// CredentialStamp fingerprints the credential a login failure was recorded against.
+	CredentialStamp string `json:"credentialStamp,omitempty"`
+}
+
+// staleLoginFailure reports a login failure that a later Desktop sign-in has made obsolete,
+// so its backoff no longer applies.
+func staleLoginFailure(entry onlineEntry, dir string) bool {
+	if entry.Failures == 0 || entry.CredentialStamp == "" {
+		return false
+	}
+	stamp, err := credentialStamp(dir)
+	return err == nil && stamp != "" && stamp != entry.CredentialStamp
+}
+
+func (e *onlineEntry) clearFailure() {
+	e.Failures, e.LastError, e.CredentialStamp, e.NextAllowed = 0, "", "", time.Time{}
 }
 
 type onlineCache struct {
@@ -187,6 +203,10 @@ func (m *Manager) refreshOnlineAccount(ctx context.Context, id string, querier A
 	if entry.AccountID != before.target.AccountID {
 		entry = onlineEntry{AccountID: before.target.AccountID}
 	}
+	if staleLoginFailure(entry, before.target.Directory) {
+		entry.clearFailure()
+	}
+	stamp, _ := credentialStamp(before.target.Directory)
 	now := time.Now()
 	if !force && entry.Usage != nil {
 		settings, settingsErr := m.readSettings()
@@ -266,8 +286,12 @@ func (m *Manager) refreshOnlineAccount(ctx context.Context, id string, querier A
 		if retry := desktopusage.RetryAt(queryErr); retry.After(entry.NextAllowed) {
 			entry.NextAllowed = retry
 		}
+		entry.CredentialStamp = ""
+		if desktopusage.LoginRejected(queryErr) {
+			entry.CredentialStamp = stamp
+		}
 	} else {
-		entry.Failures, entry.LastError = 0, ""
+		entry.Failures, entry.LastError, entry.CredentialStamp = 0, "", ""
 	}
 	cache.Entries[id] = entry
 	if err := writeJSON(m.onlineCachePath(), cache); err != nil {

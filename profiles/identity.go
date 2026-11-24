@@ -1,8 +1,11 @@
 package profiles
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 )
@@ -99,4 +102,46 @@ func (m *Manager) reconcile(s *manifest, id string, dir string) (string, error) 
 		}
 	}
 	return actual, nil
+}
+
+// credentialStamp fingerprints Desktop's encrypted token cache so a new login can be noticed
+// without decrypting it. It returns "" when no token cache is saved.
+func credentialStamp(dir string) (string, error) {
+	path := filepath.Join(dir, "config.json")
+	if err := checkedFile(path); err != nil {
+		return "", err
+	}
+	f, err := os.Open(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	dec := json.NewDecoder(io.LimitReader(f, 4<<20))
+	if token, err := dec.Token(); err != nil || token != json.Delim('{') {
+		return "", ErrInvalidState
+	}
+	for dec.More() {
+		key, err := dec.Token()
+		if err != nil {
+			return "", ErrInvalidState
+		}
+		if key == "oauth:tokenCacheV2" {
+			var encrypted string
+			if err := dec.Decode(&encrypted); err != nil {
+				return "", ErrInvalidState
+			}
+			if encrypted == "" {
+				return "", nil
+			}
+			sum := sha256.Sum256([]byte(encrypted))
+			return hex.EncodeToString(sum[:8]), nil
+		}
+		if err := discardValue(dec); err != nil {
+			return "", ErrInvalidState
+		}
+	}
+	return "", nil
 }

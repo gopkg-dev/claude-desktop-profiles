@@ -73,6 +73,9 @@ func (m *Manager) usageEntry(view onlineView, p Profile, dir string) (UsageEntry
 		entry.Status = UsageInvalid
 		return entry, false
 	}
+	if staleLoginFailure(cached, dir) {
+		cached.LastError, cached.NextAllowed = "", time.Time{}
+	}
 	entry.Status = UsageMissing
 	entry.RemoteUsageError = cached.LastError
 	entry.RemoteUsageRetryAt, entry.NextRefreshAt = cached.NextAllowed, cached.NextAllowed

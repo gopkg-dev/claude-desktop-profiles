@@ -2,13 +2,16 @@ package profiles
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"claudeprofiles/desktopauth"
 	"claudeprofiles/desktopusage"
 )
 
@@ -310,5 +313,63 @@ func TestUsagePollingExposesManualCooldownSeparatelyFromCacheLifetime(t *testing
 			!profile.NextRefreshAt.Equal(entry.NextRefreshAt)) {
 			t.Fatal("full and periodic snapshots disagree about refresh scheduling")
 		}
+	}
+}
+
+func putTokenCache(t *testing.T, dir, account, token string) {
+	t.Helper()
+	b, err := json.Marshal(map[string]any{"lastKnownAccountUuid": account, "oauth:tokenCacheV2": token})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestNewDesktopLoginLiftsLoginFailureBackoff(t *testing.T) {
+	t.Parallel()
+	m, driver, _, active := twoProfiles(t)
+	putTokenCache(t, m.paths.LiveDir, "account-b", "old-login")
+	q := &accountQueryFixture{failure: desktopauth.ErrExpired}
+	m.SetUsageQuerier(q)
+	if err := m.RefreshRemoteUsage(context.Background(), active); !errors.Is(err, desktopauth.ErrExpired) {
+		t.Fatal(err)
+	}
+	if err := m.RefreshRemoteUsage(context.Background(), active); !errors.Is(err, ErrRemoteUsageCooldown) {
+		t.Fatal("login failure did not back off", err)
+	}
+
+	putTokenCache(t, m.paths.LiveDir, "account-b", "new-login")
+	restarted := New(m.paths, driver)
+	restarted.SetUsageQuerier(q)
+	usage, err := restarted.UsageSnapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if entry := usageEntryByID(t, usage, active); entry.RemoteUsageError != "" || !entry.RemoteUsageRetryAt.IsZero() {
+		t.Fatalf("stale login failure still shown: %q until %v", entry.RemoteUsageError, entry.RemoteUsageRetryAt)
+	}
+	q.failure = nil
+	if err := restarted.RefreshRemoteUsage(context.Background(), active); err != nil {
+		t.Fatal("refresh after a new login was blocked", err)
+	}
+	cache, _ := restarted.readOnlineCache()
+	if entry := cache.Entries[active]; entry.Failures != 0 || entry.CredentialStamp != "" {
+		t.Fatalf("failure state survived success: %+v", entry)
+	}
+}
+
+func TestOtherFailuresKeepBackoffAfterNewLogin(t *testing.T) {
+	t.Parallel()
+	m, _, _, active := twoProfiles(t)
+	putTokenCache(t, m.paths.LiveDir, "account-b", "old-login")
+	m.SetUsageQuerier(&accountQueryFixture{failure: desktopusage.ErrNetwork})
+	if err := m.RefreshRemoteUsage(context.Background(), active); !errors.Is(err, desktopusage.ErrNetwork) {
+		t.Fatal(err)
+	}
+	putTokenCache(t, m.paths.LiveDir, "account-b", "new-login")
+	if err := m.RefreshRemoteUsage(context.Background(), active); !errors.Is(err, ErrRemoteUsageCooldown) {
+		t.Fatal("network backoff was lifted by a login change", err)
 	}
 }

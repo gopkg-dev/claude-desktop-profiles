@@ -94,6 +94,15 @@ func UserMessage(err error) string {
 	return desktopauth.UserMessage(err)
 }
 
+// LoginRejected reports failures that only a new Claude Desktop sign-in can fix.
+func LoginRejected(err error) bool {
+	var status *statusError
+	if errors.As(err, &status) {
+		return status.status == http.StatusUnauthorized
+	}
+	return errors.Is(err, desktopauth.ErrExpired) || errors.Is(err, desktopauth.ErrUnavailable)
+}
+
 // RetryAt exposes a bounded server-directed cooldown without response header contents.
 func RetryAt(err error) time.Time {
 	var status *statusError
