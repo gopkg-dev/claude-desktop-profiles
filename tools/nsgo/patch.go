@@ -44,9 +44,10 @@ func prepareTool(ctx context.Context, development bool) (string, func(), error) 
 	if err := json.Unmarshal(data, &module); err == nil && module.Dir == "" && module.Version != "" {
 		// `go tool` can run from the build cache without the module's source, as on CI after a
 		// cache restore; download it so its go.mod and sources can be read.
-		if data, err = exec.CommandContext(ctx, "go", "mod", "download", "-json", upstreamModule).Output(); err == nil {
-			module = moduleInfo{}
-			err = json.Unmarshal(data, &module)
+		// A failed download leaves Dir empty, which is reported below.
+		module = moduleInfo{}
+		if data, err := exec.CommandContext(ctx, "go", "mod", "download", "-json", upstreamModule).Output(); err == nil {
+			_ = json.Unmarshal(data, &module)
 		}
 	}
 	if module.Dir == "" || module.Version == "" {
