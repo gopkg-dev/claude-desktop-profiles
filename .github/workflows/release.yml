@@ -19,6 +19,9 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v7
+        with:
+          # The release notes are read from this version's release commit.
+          fetch-depth: 0
 
       - uses: actions/setup-go@v7
         with:
@@ -52,10 +55,17 @@ jobs:
           ls -l dist/releases
           ls dist/releases/appcast-*.xml > /dev/null
 
+      # The "- " lines of this version's "chore(release): X.Y.Z" commit become the notes
+      # Sparkle's update dialog shows.
+      - name: Add release notes
+        run: |
+          git log -1 --format=%b --fixed-strings --grep "chore(release): ${GITHUB_REF_NAME#v}" "$GITHUB_REF_NAME" |
+            python3 -I .github/scripts/release_notes.py --markdown "$RUNNER_TEMP/notes.md" dist/releases/appcast-*.xml
+
       - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$GITHUB_REF_NAME" dist/releases/* \
-            --verify-tag --generate-notes --latest \
+            --verify-tag --notes-file "$RUNNER_TEMP/notes.md" --generate-notes --latest \
             --title "Claude Desktop Profiles ${GITHUB_REF_NAME#v}"
