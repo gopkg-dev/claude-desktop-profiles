@@ -1,6 +1,6 @@
 name: Claude Desktop Profiles
 id: local.claudeprofiles.app
-version: 0.8.0
+version: 0.8.1
 
 sign:
   identity: Apple Development
